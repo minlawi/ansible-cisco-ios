@@ -1,0 +1,103 @@
+#### This file contains variables that are applied to all hosts in the inventory. ####
+
+enable_secret: admin
+local_user: admin
+local_user_password: admin
+
+# Variable of TACACS+ servers #
+tacacs_svr:
+  - name: tacacs1     #<-- Logical Name of the TACACS+ primary server
+    address: 1.1.1.1  #<-- Replace with actual IP address of TACACS+ primary server
+    key: cisco123     #<-- Replace with actual shared secret key for TACACS+ primary server
+  
+  - name: tacacs2     #<-- Logical Name of the TACACS+ secondary server
+    address: 1.1.1.2  #<-- Replace with actual IP address of TACACS+ secondary server
+    key: cisco123     #<-- Replace with actual shared secret key for TACACS+ secondary server
+
+# Variable of TACACS+ server groups #
+tacacs_svr_group:
+  - name: TAC-GROUP1        #<-- Logical Name of the TACACS+ server group
+    source_interface: vlan1 #<-- Replace with actual source interface for TACACS+ server communication
+    server_1: tacacs1       #<-- Reference to the primary TACACS+ server defined above
+    server_2: tacacs2       #<-- Reference to the secondary TACACS+ server defined above
+
+# Variable of AAA commands to be applied to all hosts #
+aaa_commands:
+  - aaa authentication login default group TAC-GROUP1 local
+  - aaa authorization exec default group TAC-GROUP1 local if-authenticated
+  - aaa authorization commands 15 default group TAC-GROUP1 local if-authenticated
+  - aaa authorization configuration default group TAC-GROUP1
+  - aaa accounting exec default start-stop group TAC-GROUP1
+  - aaa accounting commands 15 default start-stop group TAC-GROUP1
+
+ntp_servers:
+  - server: 1.1.1.1    # Primary NTP server (Change to your actual NTP primary address)
+    prefer: true       # Prefer this server
+  - server: 1.1.1.2    # Secondary NTP server (Change to your actual NTP secondary address)
+
+# VLAN Definitions (Database)
+vlans:
+  - id: 101
+    name: HR
+    state: active # Options: active, suspend
+  - id: 102
+    name: CCTV
+    state: active # Options: active, suspend
+  - id: 103
+    name: PRINTER
+    state: active
+
+# ============================================
+# SNMP Configuration (Global)
+# ============================================
+# MAC notification settings
+mac_notification:
+  interval: 10
+  state: enabled
+
+# SNMP views
+snmp_views:
+  - name: Read_View
+    family_name: iso
+    included: true
+  - name: Write_View
+    family_name: iso
+    included: true
+
+# SNMP groups (including context-based groups)
+snmp_groups:
+  - group: SNMP-G1
+    version: v3
+    version_option: auth
+    read: Read_View
+    write: Write_View
+    notify: Read_View
+  - group: SNMP-G1
+    version: v3
+    version_option: priv
+    read: Read_View
+    write: Write_View
+    notify: Read_View
+  - group: SNMP-G1
+    version: v3
+    version_option: priv
+    context: vlan
+    read: Read_View
+    write: Write_View
+    notify: Read_View
+  - group: SNMP-G1
+    version: v3
+    version_option: priv
+    context: vlan-*
+    match: prefix
+    read: Read_View
+    write: Write_View
+    notify: Read_View
+
+# SNMP host/trap receiver
+snmp_hosts:
+  - host: 1.1.1.4
+    version: 3
+    version_option: priv
+    community_string: SNMP-G1
+    traps: snmp

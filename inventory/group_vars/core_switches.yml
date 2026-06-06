@@ -1,0 +1,13 @@
+# Variable of TACACS+ server groups #
+tacacs_svr_group:
+  - name: TAC-GROUP1          #<-- Logical Name of the TACACS+ server group
+    source_interface: vlan10  #<-- Replace with actual source interface for TACACS+ server communication
+    server_1: tacacs1         #<-- Reference to the primary TACACS+ server defined in group_vars/all.yml
+    server_2: tacacs2         #<-- Reference to the secondary TACACS+ server defined in group_vars/all.yml
+
+# Variable of NTP source interface #
+ntp_src_intf: vlan10
+
+# SNMP source interface for core switches
+snmp_trap_source: vlan10
+snmp_inform_source: vlan10

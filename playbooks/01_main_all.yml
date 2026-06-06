@@ -1,0 +1,223 @@
+---
+- name: Play standard config template for new Cisco C9K switches
+  hosts: switches
+  gather_facts: false
+  # any_errors_fatal: true  # Stop playbook if any host fails
+
+  tasks:
+    - name: Reachability Test (ICMP Ping)
+      ansible.builtin.command:
+        cmd: "ping -c 1 -W 2 {{ ansible_host }}"
+      register: ping_result
+      changed_when: false
+      ignore_errors: true
+      no_log: true
+      tags: ping
+
+    - name: Print the ping result message
+      ansible.builtin.fail:
+        msg: "PING FAILED!"
+      when: ping_result.rc != 0
+      tags: ping
+
+    - name: Hostname configuration
+      cisco.ios.ios_hostname:
+        config:
+          hostname: "{{ ansible_hostname }}" # Value of "actual_hostname" defined in inventory/hosts.ini
+        state: merged
+      register: hostname_result
+      tags: hostname
+
+    - name: AAA model initialization (aaa new-model)
+      cisco.ios.ios_config:
+        lines:
+          - aaa new-model
+      register: aaa_result
+      tags: aaa
+
+    - name: Enable secret password configuration
+      cisco.ios.ios_config:
+        lines:
+          - enable secret {{ enable_secret }} # Value of "enable_secret" defined in group_vars/all.yml
+      register: enable_secret_result
+      no_log: true
+      tags: aaa
+
+    - name: Local user account creation
+      cisco.ios.ios_user:
+        name: "{{ local_user }}" # Value of "local_user" defined in group_vars/all.yml
+        privilege: 15
+        state: present
+        configured_password: "{{ local_user_password }}" # Value of "local_user_password" defined in group_vars/all.yml
+        update_password: on_create
+        password_type: secret
+      register: user_result
+      no_log: true
+      tags: aaa
+
+    - name: TACACS+ server definition
+      cisco.ios.ios_config:
+        lines:
+          - address ipv4 {{ item.address }} # Value of "address" defined in group_vars/all.yml
+          - key 7 {{ item.key }} # Value of "key" defined in group_vars/all.yml
+        parents: tacacs server {{ item.name }} # Value of "name" defined in group_vars/all.yml
+      with_items: "{{ tacacs_svr | default([]) }}"
+      register: tacacs_svr_result
+      no_log: true
+      tags: aaa
+
+    - name: TACACS+ server group configuration
+      cisco.ios.ios_config:
+        lines:
+          - ip tacacs source-interface {{ item.source_interface }} # Value of "source_interface" defined in group_vars/{{ inventory_hostname }}.yml
+          - server name {{ item.server_1 }} # Value of "server_1" defined in group_vars/all.yml
+          - server name {{ item.server_2 }} # Value of "server_2" defined in group_vars/all.yml
+        parents: aaa group server tacacs+ {{ item.name }} # Value of "name" defined in group_vars/all.yml
+      with_items: "{{ tacacs_svr_group | default([]) }}"
+      register: tacacs_group_result
+      no_log: true
+      tags: aaa
+
+    - name: AAA authentication and authorization commands 
+      cisco.ios.ios_config:
+        lines: "{{ aaa_commands }}" # Value of "aaa_commands" defined in group_vars/all.yml
+      register: aaa_commands_result
+      tags: aaa
+
+    - name: Banner Login
+      cisco.ios.ios_banner:
+        banner: login
+        text: "{{ lookup('file', 'banner_sms/login.cfg') }}" # Content of "banner_sms/login.cfg" file
+      register: banner_result
+      tags: banner
+
+    - name: Banner MOTD
+      cisco.ios.ios_banner:
+        banner: motd
+        text: "{{ lookup('file', 'banner_sms/motd.cfg') }}" # Content of "banner_sms/motd.cfg" file
+      register: banner_motd_result
+      tags: banner
+
+    - name: VLAN database provisioning
+      cisco.ios.ios_vlans:
+        config:
+          - vlan_id: "{{ item.id }}" # Value of "id" defined in group_vars/all.yml
+            name: "{{ item.name }}" # Value of "name" defined in group_vars/all.yml
+            state: "{{ item.state }}" # Value of "state" defined in group_vars/all.yml
+        state: merged
+      with_items: "{{ vlans | default([]) }}"
+      register: vlan_result
+      tags: vlan
+
+    - name: Initialize access_intf_result for hosts without access_interfaces
+      ansible.builtin.set_fact:
+        access_intf_result:
+          changed: false
+      when: access_interfaces is not defined ### <- inventory/host_vars/*.yml
+      tags: access_interfaces
+
+    - name: Access interface assignment
+      cisco.ios.ios_config:
+        parents: "interface {{ item }}"
+        lines:
+          - "switchport mode access"
+          - "switchport nonegotiate"
+          - "no cdp enable"
+          # - "snmp trap mac-notification change added"
+          # - "snmp trap mac-notification change removed"
+          # - "storm-control broadcast level 5.00"
+          # - "storm-control multicast level 10.00"
+          # - "storm-control action trap"
+          - "shutdown"
+      loop: "{{ access_interfaces }}"
+      register: access_intf_result
+      when: access_interfaces is defined
+      tags: access_interfaces
+
+    - name: NTP client synchronization
+      cisco.ios.ios_ntp_global:
+        config:
+          servers: "{{ ntp_servers | default([]) }}"
+          source: "{{ ntp_src_intf | default(omit) }}"
+        state: merged
+      register: ntp_result
+      tags: ntp
+
+    # - name: Task 11.1 [Configure MAC address-table notification]
+    #   cisco.ios.ios_config:
+    #     lines:
+    #       - "mac address-table notification change interval {{ mac_notification.interval }}"
+    #       - "mac address-table notification change"
+    #   when: mac_notification.state | default('disabled') == 'enabled'
+    #   register: mac_notification_result
+    #   tags: snmp
+
+    - name: SNMP monitoring configuration
+      cisco.ios.ios_snmp_server:
+        config:
+          views: "{{ snmp_views | default(omit) }}"
+          groups: "{{ snmp_groups | default(omit) }}"
+          hosts: "{{ snmp_hosts | default(omit) }}"
+          trap_source: "{{ snmp_trap_source | default(omit) }}"
+          source_interface: "{{ snmp_inform_source | default(omit) }}"
+        state: merged
+      register: snmp_result
+      tags: snmp
+
+    - name: Configuration saving and backup generation
+      cisco.ios.ios_config:
+        save_when: always
+      register: save_result
+      tags: backup
+
+    - name: Get date/time
+      ansible.builtin.debug:
+        msg: "{{ lookup('pipe', 'date +%Y-%m-%d_%H:%M:%S') }}"
+      register: date_time
+      tags: backup
+
+    - name: Backup configuration
+      cisco.ios.ios_config:
+        backup: true
+        backup_options:
+          dir_path: "./config_bkp/{{ ansible_hostname }}"
+          filename: "{{ ansible_hostname }}_{{ date_time.msg }}.cfg"
+      register: backup_result
+      tags: backup
+
+    - name: Print results summary
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - " Configuration Summary: {{ inventory_hostname }}"
+          - "=========================================="
+          - >-
+              Hostname           : {{ hostname_result.changed | default(false) | ternary('CHANGED', 'NO CHANGE') }}
+              ({{ hostname_result.after.hostname | default(hostname_result.before.hostname | default('N/A')) }})
+          - "AAA new-model      : {{ aaa_result.changed | default(false) | ternary('ENABLED', 'EXISTING') }}"
+          - "Enable secret      : {{ enable_secret_result.changed | default(false) | ternary('CONFIGURED', 'EXISTING') }}"
+          - "Local user account : {{ user_result.changed | default(false) | ternary('CREATED', 'EXISTS') }} ({{ local_user | default('N/A') }})"
+          - >-
+              TACACS Servers     : {{ tacacs_svr_result.results | default([]) | length | ternary('CONFIGURED', 'NONE') }}
+              ({{ tacacs_svr_result.results | default([]) | map(attribute='item') | map(attribute='name') | join(', ') | default('None') }})
+          - >-
+              TACACS Groups      : {{ tacacs_group_result.results | default([]) | length | ternary('CONFIGURED', 'NONE') }}
+              ({{ tacacs_group_result.results | default([]) | map(attribute='item') | map(attribute='name') | join(', ') | default('None') }})
+          - "AAA Commands       : {{ aaa_commands_result.changed | default(false) | ternary('APPLIED', 'NO CHANGE') }}"
+          - >-
+              VLANs              : {{ vlan_result.results | default([]) | length | ternary('CONFIGURED', 'NONE') }}
+              ({{ vlan_result.results | default([]) | map(attribute='item') | map(attribute='id') | join(', ') | default('None') }})
+          - >-
+              Access Interfaces  : {{ access_intf_result.changed | default(false) | ternary('CONFIGURED', 'NO CHANGE') }}
+              ({{ access_interfaces | default([]) | length }} interfaces)
+          - >-
+              NTP                : {{ ntp_result.changed | default(false) | ternary('CONFIGURED', 'NO CHANGE') }}
+              ({{ ntp_servers | default([]) | length }} servers, src: {{ ntp_src_intf | default('N/A') }})
+          - >-
+              SNMP               : {{ snmp_result.changed | default(false) | ternary('CONFIGURED', 'NO CHANGE') }}
+              ({{ snmp_hosts | default([]) | length }} hosts, src: {{ snmp_trap_source | default('N/A') }})
+          - >-
+              Config Save/Backup : {{ save_result.changed | default(false) | ternary('SAVED', 'NO CHANGES') }} |
+              Backup: {{ backup_result.backup_path | default('N/A') }}
+          - "=========================================="
+      tags: ['always']

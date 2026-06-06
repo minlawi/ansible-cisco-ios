@@ -1,0 +1,60 @@
+---
+# host_vars/CSW-2.yml
+# Access Port information
+access_interfaces:
+  - GigabitEthernet1/2
+  - GigabitEthernet1/3
+  - GigabitEthernet2/0
+  - GigabitEthernet2/1
+  - GigabitEthernet2/2
+  - GigabitEthernet2/3
+  - GigabitEthernet3/0
+  - GigabitEthernet3/1
+  - GigabitEthernet3/2
+  - GigabitEthernet3/3
+
+# host_vars/CSW-2.yml
+# EtherChannel Configuration for Core Switch 2
+
+# Port-Channel 10 - Core to Distribution Switch 1
+# Port-Channel 20 - Core to Distribution Switch 2
+# Port-Channel 30 - Core to Core Interconnect
+
+port_channels:
+  - port_channel: 10
+    description: "CORE-TO-DSW1-PC10"
+    vlans: "10,20,30,101,102"
+
+  - port_channel: 20
+    description: "CORE-TO-DSW2-PC20"
+    vlans: "10,20,30,101,102"
+
+  - port_channel: 30
+    description: "TO-CSW-1-PC30"
+    vlans: "10,20,30,101,102"
+
+# Physical interfaces - Each interface mapped to its Port-Channel
+physical_interfaces:
+  - interface: "GigabitEthernet0/3"
+    description: "TO-CSW-1-GigabitEthernet1/0"
+    port_channel: 30
+
+  - interface: "GigabitEthernet0/0"
+    description: "TO-CSW-1-GigabitEthernet0/2"
+    port_channel: 30
+
+  - interface: "GigabitEthernet1/0"
+    description: "TO-DSW-2-GigabitEthernet1/2"
+    port_channel: 10
+
+  - interface: "GigabitEthernet0/1"
+    description: "TO-DSW-2-GigabitEthernet0/0"
+    port_channel: 10
+
+  - interface: "GigabitEthernet1/1"
+    description: "TO-DSW-1-GigabitEthernet1/3"
+    port_channel: 20
+
+  - interface: "GigabitEthernet0/2"
+    description: "TO-DSW-1-GigabitEthernet0/1"
+    port_channel: 20
