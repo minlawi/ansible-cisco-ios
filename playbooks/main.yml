@@ -1,5 +1,5 @@
 ---
-- name: Play standard config template for new Cisco C9K switches
+- name: Play standard config template for new Cisco IOS switches
   hosts: switches
   gather_facts: false
   # any_errors_fatal: true  # Stop playbook if any host fails
