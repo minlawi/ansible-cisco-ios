@@ -1,3 +1,1 @@
 *.coffee
-playbooks/02_configure_etherchannel_dsw.yml
-playbooks/03_configure_etherchannel_csw.yml
